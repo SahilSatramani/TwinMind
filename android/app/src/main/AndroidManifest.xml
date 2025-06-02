@@ -28,8 +28,5 @@ package="com.twinmindclean">
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
-      <meta-data
-  android:name="com.google.android.geo.API_KEY"
-  android:value="AIzaSyC4D77MM-P0KCV9uy93m9Hd8C6p7stMYS0"/>
     </application>
 </manifest>
