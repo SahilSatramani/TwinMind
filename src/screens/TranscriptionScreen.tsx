@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState , useRef} from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,9 @@ import {
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import Geolocation from '@react-native-community/geolocation';
 import transcriptionStyles from '../styles/transcriptionStyles';
+import RNFS from 'react-native-fs';
+import { transcribeAudioChunk } from '../utils/transcribe';
+import { GOOGLE_MAPS_API_KEY } from '@env';; 
 
 const audioRecorderPlayer = new AudioRecorderPlayer();
 const TABS = ['Questions', 'Notes', 'Transcript'];
@@ -20,6 +23,7 @@ export default function TranscriptionScreen({ navigation }: any) {
   const [startTime, setStartTime] = useState('');
   const [location, setLocation] = useState('');
   const [activeTab, setActiveTab] = useState('Questions');
+  const [transcripts, setTranscripts] = useState<{ time: string; text: string }[]>([]);
 
   useEffect(() => {
     const now = new Date();
@@ -32,7 +36,7 @@ export default function TranscriptionScreen({ navigation }: any) {
     setStartTime(`${dateStr} • ${timeStr}`);
 
     getLocation();
-    startRecording();
+    startChunkedRecording();
   }, []);
 
   const getLocation = async () => {
@@ -47,7 +51,7 @@ export default function TranscriptionScreen({ navigation }: any) {
       async (pos) => {
         const { latitude, longitude } = pos.coords;
         try {
-          const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=AIzaSyC4D77MM-P0KCV9uy93m9Hd8C6p7stMYS0`;
+          const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_API_KEY}`;
           const response = await fetch(url);
           const data = await response.json();
           console.log('Geocode data:', JSON.stringify(data, null, 2));
@@ -83,24 +87,69 @@ export default function TranscriptionScreen({ navigation }: any) {
     );
   };
 
-  const startRecording = async () => {
-    const hasPermission = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
-    );
-    if (hasPermission !== PermissionsAndroid.RESULTS.GRANTED) return;
+  // Add at the top of TranscriptionScreen
+const [audioChunks, setAudioChunks] = useState<string[]>([]);
+const chunkDuration = 30000; // 30 seconds
+const chunkPathsRef = useRef<string[]>([]);
+const recorderIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-    await audioRecorderPlayer.startRecorder();
+const startChunkedRecording = async () => {
+  const permission = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+  if (permission !== PermissionsAndroid.RESULTS.GRANTED) return;
+
+  const startNewChunk = async () => {
+    const fileName = `chunk_${Date.now()}.mp4`;
+    const path = `${RNFS.CachesDirectoryPath}/${fileName}`;
+    console.log('Recording to:', path);
+
+    const uri = await audioRecorderPlayer.startRecorder(path);
+    console.log('Recording started:', uri);
+
+    recorderIntervalRef.current = setTimeout(async () => {
+      await audioRecorderPlayer.stopRecorder();
+      audioRecorderPlayer.removeRecordBackListener();
+
+      chunkPathsRef.current.push(uri);
+      setAudioChunks([...chunkPathsRef.current]);
+
+      //  Confirm file exists before uploading
+      const realPath = uri.replace('file://', '');
+      const exists = await RNFS.exists(realPath);
+      console.log('File exists after recording?', exists);
+
+      //  Transcribe if file exists
+      if (exists) {
+        const transcription = await transcribeAudioChunk(uri);
+        //const transcription = await testHttpBinUpload(uri);
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setTranscripts((prev) => [...prev, { time: timeStr, text: transcription }]);
+      } else {
+        console.warn('Chunk not found, skipping transcription');
+      }
+
+      startNewChunk(); // Start next chunk
+    }, chunkDuration);
+
     audioRecorderPlayer.addRecordBackListener((e) => {
       setRecordTime(audioRecorderPlayer.mmssss(Math.floor(e.currentPosition)));
       return;
     });
   };
 
+  startNewChunk();
+};
+
   const stopRecording = async () => {
-    await audioRecorderPlayer.stopRecorder();
-    audioRecorderPlayer.removeRecordBackListener();
-    navigation.goBack();
-  };
+  if (recorderIntervalRef.current) clearTimeout(recorderIntervalRef.current);
+  await audioRecorderPlayer.stopRecorder();
+  audioRecorderPlayer.removeRecordBackListener();
+
+  // Final audio file
+  setAudioChunks([...chunkPathsRef.current]);
+  console.log('Recorded chunks:', chunkPathsRef.current);
+
+  navigation.goBack();
+};
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -109,7 +158,19 @@ export default function TranscriptionScreen({ navigation }: any) {
       case 'Notes':
         return <Text style={transcriptionStyles.placeholder}>You can write your own notes!</Text>;
       case 'Transcript':
-        return <Text style={transcriptionStyles.placeholder}>Transcript will appear here</Text>;
+        return (
+        <View>
+        {transcripts.map((item, index) => (
+          <View key={index} style={{ marginBottom: 12 }}>
+            <Text style={{ fontWeight: 'bold', color: '#005B9E' }}>{item.time}</Text>
+            <Text style={{ marginTop: 4 }}>{item.text}</Text>
+          </View>
+        ))}
+        <Text style={{ marginTop: 12, fontSize: 12, color: 'gray', textAlign: 'center' }}>
+          Transcript is updated every 30s. <Text style={{ textDecorationLine: 'underline' }}>Update now</Text>
+        </Text>
+        </View>
+  );
       default:
         return null;
     }
