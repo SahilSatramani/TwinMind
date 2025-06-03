@@ -6,12 +6,13 @@ import {
   PermissionsAndroid,
   Platform,
   SafeAreaView,
+  ToastAndroid,
 } from 'react-native';
 import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import Geolocation from '@react-native-community/geolocation';
 import RNFS from 'react-native-fs';
 import { transcribeAudioChunk } from '../utils/transcribe';
-import { GOOGLE_MAPS_API_KEY } from '@env';
+import { GOOGLE_MAPS_API_KEY, OPENAI_API_KEY } from '@env';
 import transcriptionStyles from '../styles/transcriptionStyles';
 import TranscriptChatPanel from '../components/TranscriptChatPanel';
 import QuestionsTab from '../components/QuestionTab';
@@ -45,6 +46,8 @@ export default function TranscriptionScreen({ navigation, route }: any) {
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [transcripts, setTranscripts] = useState<{ time: string; text: string }[]>([]);
   const sessionIdRef = useRef<number | null>(sessionId || null);
+  const recorderIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const chunkPathsRef = useRef<string[]>([]);
 
   useEffect(() => {
     if (readOnly && sessionId) {
@@ -60,10 +63,7 @@ export default function TranscriptionScreen({ navigation, route }: any) {
       if (summary?.title) setTitle(summary.title);
 
       const transcriptData = await getTranscriptsBySession(sid);
-      const mapped = transcriptData.map(t => ({
-        time: t.timestamp,
-        text: t.text,
-      }));
+      const mapped = transcriptData.map(t => ({ time: t.timestamp, text: t.text }));
       setTranscripts(mapped);
 
       const allSessions: SessionRecord[] = await getAllSessionsWithTitles();
@@ -94,7 +94,7 @@ export default function TranscriptionScreen({ navigation, route }: any) {
     try {
       const id = await createSession(fullTime, loc || 'Unknown');
       sessionIdRef.current = id;
-      console.log(' Session started with ID:', id);
+      console.log('🆕 Session started with ID:', id);
     } catch (err) {
       console.error('Session creation failed:', err);
     }
@@ -140,9 +140,6 @@ export default function TranscriptionScreen({ navigation, route }: any) {
     });
   };
 
-  const chunkPathsRef = useRef<string[]>([]);
-  const recorderIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
   const startChunkedRecording = async () => {
     const permission = await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
@@ -171,7 +168,6 @@ export default function TranscriptionScreen({ navigation, route }: any) {
 
           if (sessionIdRef.current) {
             await insertTranscript(sessionIdRef.current, timeStr, transcription);
-            console.log('Transcript stored in DB:', transcription);
           }
         }
 
@@ -186,6 +182,72 @@ export default function TranscriptionScreen({ navigation, route }: any) {
 
     startNewChunk();
   };
+
+  const stopRecording = async () => {
+    if (recorderIntervalRef.current) clearTimeout(recorderIntervalRef.current);
+    await audioRecorderPlayer.stopRecorder();
+    audioRecorderPlayer.removeRecordBackListener();
+    setRecordingStopped(true);
+    setActiveTab('Notes');
+
+    // Wait for transcript if it's not arrived yet
+    let retries = 10;
+    while (retries > 0 && transcripts.length === 0) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      retries--;
+    }
+
+    const transcriptText = transcripts.map(t => t.text).join(' ').trim();
+    if (!transcriptText) {
+      setTitle('Untitled Session');
+      return;
+    }
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: 'system',
+              content: 'Given the following transcript, return a concise and descriptive title (max 10 words) summarizing the meeting topic:',
+            },
+            {
+              role: 'user',
+              content: transcriptText,
+            },
+          ],
+        }),
+      });
+
+      const data = await response.json();
+      const generatedTitle = data.choices?.[0]?.message?.content?.trim();
+      if (generatedTitle && generatedTitle.length > 3) {
+        setTitle(generatedTitle);
+      }
+    } catch (err) {
+      const fallback = transcriptText.split(/[.?!]/)[0]?.trim();
+      if (fallback) setTitle(capitalize(fallback.slice(0, 60)));
+    }
+  };
+
+  const handleStopPress = async () => {
+    if (transcripts.length === 0) {
+      ToastAndroid.show(
+        'Please wait at least 30 seconds before stopping.',
+        ToastAndroid.SHORT
+      );
+      return;
+    }
+    await stopRecording();
+  };
+
+  const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -272,13 +334,7 @@ export default function TranscriptionScreen({ navigation, route }: any) {
           {!readOnly && (
             <TouchableOpacity
               style={transcriptionStyles.stopButton}
-              onPress={() => {
-                if (recorderIntervalRef.current) clearTimeout(recorderIntervalRef.current);
-                audioRecorderPlayer.stopRecorder();
-                audioRecorderPlayer.removeRecordBackListener();
-                setRecordingStopped(true);
-                setActiveTab('Notes');
-              }}
+              onPress={handleStopPress}
             >
               <Text style={transcriptionStyles.stopText}>Stop</Text>
             </TouchableOpacity>
