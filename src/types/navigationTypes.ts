@@ -4,4 +4,5 @@ export type RootStackParamList = {
   MainScreen: undefined;
   Settings: undefined;
   Transcription: undefined;
+  QuestionDetail: { question: string; answer: string };
 };

@@ -29,17 +29,42 @@ export default function TranscriptChatPanel({
   transcript: string;
   sessionId: number | null;
 }) {
+    console.log('TranscriptChatPanel received sessionId:', sessionId);
   const [query, setQuery] = useState('');
   const [chat, setChat] = useState<{ question: string; answer: string }[]>([]);
   const [webSearch, setWebSearch] = useState(false);
 
-  const handleAsk = async (customQuery?: string) => {
-    const finalQuery = customQuery || query;
-    if (!finalQuery.trim()) return;
+const handleAsk = async (customQuery?: string) => {
+  const finalQuery = customQuery || query;
+  if (!finalQuery.trim()) return;
 
-    setChat((prev) => [...prev, { question: finalQuery, answer: '...' }]);
-    setQuery('');
+  setChat((prev) => [...prev, { question: finalQuery, answer: '...' }]);
+  setQuery('');
 
+  const saveToDB = async (question: string, answer: string) => {
+    if (!sessionId) return;
+    const timestamp = new Date().toISOString();
+    try {
+      await insertQuestionAnswer(sessionId, question, answer, timestamp);
+      console.log('stored in DB:', { question, answer });
+    } catch (err) {
+      console.error('Failed to store Q&A:', err);
+    }
+  };
+
+  // Handle short or missing transcript
+  if (!transcript || transcript.trim().split(/\s+/).length < 10) {
+    const fallback = "The transcript is too brief to answer that. Please continue recording or ask again later.";
+    setChat((prev) => {
+      const updated = [...prev];
+      updated[updated.length - 1].answer = fallback;
+      return updated;
+    });
+    await saveToDB(finalQuery, fallback);
+    return;
+  }
+
+  try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -49,7 +74,10 @@ export default function TranscriptChatPanel({
       body: JSON.stringify({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `You are an assistant answering based on this transcript:\n${transcript}` },
+          {
+            role: 'system',
+            content: `You are an assistant answering based only on this transcript:\n${transcript}`,
+          },
           { role: 'user', content: finalQuery },
         ],
       }),
@@ -58,24 +86,24 @@ export default function TranscriptChatPanel({
     const data = await response.json();
     const answer = data.choices?.[0]?.message?.content || 'No answer found.';
 
-    // Update chat state
     setChat((prev) => {
       const updated = [...prev];
       updated[updated.length - 1].answer = answer;
       return updated;
     });
 
-    // Save Q&A to DB if sessionId is available
-    if (sessionId) {
-      const timestamp = new Date().toISOString();
-      try {
-        await insertQuestionAnswer(sessionId, finalQuery, answer, timestamp);
-        console.log('💬 Q&A stored in DB');
-      } catch (err) {
-        console.error('❌ Failed to insert Q&A into DB:', err);
-      }
-    }
-  };
+    await saveToDB(finalQuery, answer);
+  } catch (err) {
+    console.error('GPT API error:', err);
+    const errorMsg = 'An error occurred while generating the answer.';
+    setChat((prev) => {
+      const updated = [...prev];
+      updated[updated.length - 1].answer = errorMsg;
+      return updated;
+    });
+    await saveToDB(finalQuery, errorMsg);
+  }
+};
 
   return (
     <KeyboardAvoidingView

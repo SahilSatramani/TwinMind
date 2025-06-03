@@ -15,7 +15,9 @@ import { transcribeAudioChunk } from '../utils/transcribe';
 import { GOOGLE_MAPS_API_KEY } from '@env';
 import transcriptionStyles from '../styles/transcriptionStyles';
 import TranscriptChatPanel from '../components/TranscriptChatPanel';
+import QuestionsTab from '../components/QuestionTab';
 import { createSession,insertTranscript } from '../db/database';
+import NotesTab from '../components/NotesTab';
 
 
 const audioRecorderPlayer = new AudioRecorderPlayer();
@@ -28,6 +30,7 @@ export default function TranscriptionScreen({ navigation }: any) {
   const [activeTab, setActiveTab] = useState('Questions');
   const [transcripts, setTranscripts] = useState<{ time: string; text: string }[]>([]);
   const [showChatPanel, setShowChatPanel] = useState(false);
+  const [recordingStopped, setRecordingStopped] = useState(false);
   const sessionIdRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -125,7 +128,7 @@ export default function TranscriptionScreen({ navigation }: any) {
         if (sessionIdRef.current) {
           try {
             await insertTranscript(sessionIdRef.current, timeStr, transcription);
-            console.log('📝 Transcript stored in DB:', transcription);
+            console.log('Transcript stored in DB:', transcription);
           } catch (err) {
             console.error('Failed to insert transcript into DB:', err);
           }
@@ -148,15 +151,27 @@ export default function TranscriptionScreen({ navigation }: any) {
     await audioRecorderPlayer.stopRecorder();
     audioRecorderPlayer.removeRecordBackListener();
     setAudioChunks([...chunkPathsRef.current]);
-    navigation.goBack();
+    setRecordingStopped(true);
   };
 
   const renderTabContent = () => {
     switch (activeTab) {
       case 'Questions':
-        return <Text style={transcriptionStyles.placeholder}>TwinMind is transcribing...</Text>;
+        return (
+          sessionIdRef.current ? (
+          <QuestionsTab sessionId={sessionIdRef.current} />
+        ) : (
+        <Text style={transcriptionStyles.placeholder}>Session not ready yet...</Text>
+      )
+);
       case 'Notes':
-        return <Text style={transcriptionStyles.placeholder}>You can write your own notes!</Text>;
+  if (!recordingStopped) {
+    return <Text style={transcriptionStyles.placeholder}>You can write your own notes!</Text>;
+  } else if (sessionIdRef.current !== null) {
+    return <NotesTab sessionId={sessionIdRef.current} />;
+  } else {
+    return <Text style={transcriptionStyles.placeholder}>Session not ready yet...</Text>;
+  }
       case 'Transcript':
         return (
           <View>

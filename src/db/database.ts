@@ -70,3 +70,49 @@ export const insertQuestionAnswer = async (
     [sessionId, question, answer, timestamp]
   );
 };
+export const getQuestionsBySession = async (sessionId: number) => {
+  const db = await getDBConnection();
+  const results = await db.executeSql(
+    `SELECT id, question, answer FROM questions WHERE session_id = ? ORDER BY id DESC`,
+    [sessionId]
+  );
+  return results[0].rows.raw(); // array of { id, question, answer }
+};
+
+export const insertSummary = async (
+  sessionId: number,
+  summary: string
+) => {
+  const db = await getDBConnection();
+  await db.executeSql(
+    `CREATE TABLE IF NOT EXISTS summaries (
+      session_id INTEGER PRIMARY KEY,
+      summary TEXT,
+      FOREIGN KEY(session_id) REFERENCES sessions(id)
+    );`
+  );
+  await db.executeSql(
+    `INSERT OR REPLACE INTO summaries (session_id, summary) VALUES (?, ?)`,
+    [sessionId, summary]
+  );
+};
+
+export const getSummaryBySession = async (sessionId: number): Promise<string | null> => {
+  const db = await getDBConnection();
+  const result = await db.executeSql(
+    `SELECT summary FROM summaries WHERE session_id = ?`,
+    [sessionId]
+  );
+  const rows = result[0].rows;
+  return rows.length > 0 ? rows.item(0).summary : null;
+};
+export const getTranscriptsBySession = async (
+  sessionId: number
+): Promise<{ timestamp: string; text: string }[]> => {
+  const db = await getDBConnection();
+  const result = await db.executeSql(
+    `SELECT timestamp, text FROM transcripts WHERE session_id = ?`,
+    [sessionId]
+  );
+  return result[0].rows.raw();
+};
