@@ -37,6 +37,15 @@ export const initDatabase = async () => {
       FOREIGN KEY(session_id) REFERENCES sessions(id)
     );
   `);
+
+
+  await db.executeSql(`
+    CREATE TABLE IF NOT EXISTS summaries (
+      session_id INTEGER PRIMARY KEY,
+      summary TEXT,
+      FOREIGN KEY(session_id) REFERENCES sessions(id)
+    );
+  `);
 };
 
 export const createSession = async (startTime: string, location: string): Promise<number> => {
@@ -47,6 +56,7 @@ export const createSession = async (startTime: string, location: string): Promis
   );
   return result[0].insertId!;
 };
+
 export const insertTranscript = async (
   sessionId: number,
   timestamp: string,
@@ -58,6 +68,7 @@ export const insertTranscript = async (
     [sessionId, timestamp, text]
   );
 };
+
 export const insertQuestionAnswer = async (
   sessionId: number,
   question: string,
@@ -70,6 +81,7 @@ export const insertQuestionAnswer = async (
     [sessionId, question, answer, timestamp]
   );
 };
+
 export const getQuestionsBySession = async (sessionId: number) => {
   const db = await getDBConnection();
   const results = await db.executeSql(
@@ -85,13 +97,6 @@ export const insertSummary = async (
 ) => {
   const db = await getDBConnection();
   await db.executeSql(
-    `CREATE TABLE IF NOT EXISTS summaries (
-      session_id INTEGER PRIMARY KEY,
-      summary TEXT,
-      FOREIGN KEY(session_id) REFERENCES sessions(id)
-    );`
-  );
-  await db.executeSql(
     `INSERT OR REPLACE INTO summaries (session_id, summary) VALUES (?, ?)`,
     [sessionId, summary]
   );
@@ -106,6 +111,7 @@ export const getSummaryBySession = async (sessionId: number): Promise<string | n
   const rows = result[0].rows;
   return rows.length > 0 ? rows.item(0).summary : null;
 };
+
 export const getTranscriptsBySession = async (
   sessionId: number
 ): Promise<{ timestamp: string; text: string }[]> => {
