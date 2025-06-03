@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
@@ -16,24 +15,69 @@ import { GOOGLE_MAPS_API_KEY } from '@env';
 import transcriptionStyles from '../styles/transcriptionStyles';
 import TranscriptChatPanel from '../components/TranscriptChatPanel';
 import QuestionsTab from '../components/QuestionTab';
-import { createSession,insertTranscript } from '../db/database';
 import NotesTab from '../components/NotesTab';
-
+import {
+  createSession,
+  insertTranscript,
+  getSummaryWithTitleBySession,
+  getTranscriptsBySession,
+  getAllSessionsWithTitles,
+} from '../db/database';
 
 const audioRecorderPlayer = new AudioRecorderPlayer();
 const TABS = ['Questions', 'Notes', 'Transcript'];
 
-export default function TranscriptionScreen({ navigation }: any) {
+type SessionRecord = {
+  id: number;
+  start_time: string;
+  location: string;
+  title: string | null;
+};
+
+export default function TranscriptionScreen({ navigation, route }: any) {
+  const { sessionId, readOnly } = route.params || {};
   const [recordTime, setRecordTime] = useState('00:00');
   const [startTime, setStartTime] = useState('');
   const [location, setLocation] = useState('');
+  const [title, setTitle] = useState('Untitled');
   const [activeTab, setActiveTab] = useState('Questions');
-  const [transcripts, setTranscripts] = useState<{ time: string; text: string }[]>([]);
+  const [recordingStopped, setRecordingStopped] = useState(readOnly || false);
   const [showChatPanel, setShowChatPanel] = useState(false);
-  const [recordingStopped, setRecordingStopped] = useState(false);
-  const sessionIdRef = useRef<number | null>(null);
+  const [transcripts, setTranscripts] = useState<{ time: string; text: string }[]>([]);
+  const sessionIdRef = useRef<number | null>(sessionId || null);
 
   useEffect(() => {
+    if (readOnly && sessionId) {
+      loadSessionDetails(sessionId);
+    } else {
+      startNewSession();
+    }
+  }, []);
+
+  const loadSessionDetails = async (sid: number) => {
+    try {
+      const summary = await getSummaryWithTitleBySession(sid);
+      if (summary?.title) setTitle(summary.title);
+
+      const transcriptData = await getTranscriptsBySession(sid);
+      const mapped = transcriptData.map(t => ({
+        time: t.timestamp,
+        text: t.text,
+      }));
+      setTranscripts(mapped);
+
+      const allSessions: SessionRecord[] = await getAllSessionsWithTitles();
+      const session = allSessions.find((s) => s.id === sid);
+      if (session) {
+        setStartTime(session.start_time);
+        setLocation(session.location);
+      }
+    } catch (err) {
+      console.error('Failed to load session data:', err);
+    }
+  };
+
+  const startNewSession = async () => {
     const now = new Date();
     const dateStr = now.toLocaleDateString(undefined, {
       month: 'short',
@@ -44,18 +88,19 @@ export default function TranscriptionScreen({ navigation }: any) {
     const fullTime = `${dateStr} • ${timeStr}`;
     setStartTime(fullTime);
 
-    getLocation().then((loc) => {
-      setLocation(loc || 'Location unavailable');
-      createSession(fullTime, loc || 'Unknown')
-        .then((sessionId) => {
-          sessionIdRef.current = sessionId;
-          console.log('🆕 Session started with ID:', sessionId);
-        })
-        .catch((err) => console.error('Session creation failed:', err));
-    });
+    const loc = await getLocation();
+    setLocation(loc || 'Location unavailable');
+
+    try {
+      const id = await createSession(fullTime, loc || 'Unknown');
+      sessionIdRef.current = id;
+      console.log(' Session started with ID:', id);
+    } catch (err) {
+      console.error('Session creation failed:', err);
+    }
 
     startChunkedRecording();
-  }, []);
+  };
 
   const getLocation = async (): Promise<string | null> => {
     if (Platform.OS === 'android') {
@@ -95,85 +140,71 @@ export default function TranscriptionScreen({ navigation }: any) {
     });
   };
 
-  const [audioChunks, setAudioChunks] = useState<string[]>([]);
-  const chunkDuration = 30000;
   const chunkPathsRef = useRef<string[]>([]);
   const recorderIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const startChunkedRecording = async () => {
-  const permission = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
-  if (permission !== PermissionsAndroid.RESULTS.GRANTED) return;
+    const permission = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
+    );
+    if (permission !== PermissionsAndroid.RESULTS.GRANTED) return;
 
-  const startNewChunk = async () => {
-    const fileName = `chunk_${Date.now()}.mp4`;
-    const path = `${RNFS.CachesDirectoryPath}/${fileName}`;
-    const uri = await audioRecorderPlayer.startRecorder(path);
+    const startNewChunk = async () => {
+      const fileName = `chunk_${Date.now()}.mp4`;
+      const path = `${RNFS.CachesDirectoryPath}/${fileName}`;
+      const uri = await audioRecorderPlayer.startRecorder(path);
 
-    recorderIntervalRef.current = setTimeout(async () => {
-      await audioRecorderPlayer.stopRecorder();
-      audioRecorderPlayer.removeRecordBackListener();
+      recorderIntervalRef.current = setTimeout(async () => {
+        await audioRecorderPlayer.stopRecorder();
+        audioRecorderPlayer.removeRecordBackListener();
 
-      chunkPathsRef.current.push(uri);
-      setAudioChunks([...chunkPathsRef.current]);
+        chunkPathsRef.current.push(uri);
 
-      const realPath = uri.replace('file://', '');
-      const exists = await RNFS.exists(realPath);
+        const realPath = uri.replace('file://', '');
+        const exists = await RNFS.exists(realPath);
 
-      if (exists) {
-        const transcription = await transcribeAudioChunk(uri);
-        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (exists) {
+          const transcription = await transcribeAudioChunk(uri);
+          const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-        setTranscripts((prev) => [...prev, { time: timeStr, text: transcription }]);
+          setTranscripts((prev) => [...prev, { time: timeStr, text: transcription }]);
 
-        if (sessionIdRef.current) {
-          try {
+          if (sessionIdRef.current) {
             await insertTranscript(sessionIdRef.current, timeStr, transcription);
             console.log('Transcript stored in DB:', transcription);
-          } catch (err) {
-            console.error('Failed to insert transcript into DB:', err);
           }
         }
-      }
 
-      startNewChunk();
-    }, chunkDuration);
+        startNewChunk();
+      }, 30000);
 
-    audioRecorderPlayer.addRecordBackListener((e) => {
-      setRecordTime(audioRecorderPlayer.mmssss(Math.floor(e.currentPosition)));
-      return;
-    });
-  };
+      audioRecorderPlayer.addRecordBackListener((e) => {
+        setRecordTime(audioRecorderPlayer.mmssss(Math.floor(e.currentPosition)));
+        return;
+      });
+    };
 
-  startNewChunk();
-};
-  const stopRecording = async () => {
-    if (recorderIntervalRef.current) clearTimeout(recorderIntervalRef.current);
-    await audioRecorderPlayer.stopRecorder();
-    audioRecorderPlayer.removeRecordBackListener();
-    setAudioChunks([...chunkPathsRef.current]);
-    setRecordingStopped(true);
+    startNewChunk();
   };
 
   const renderTabContent = () => {
     switch (activeTab) {
       case 'Questions':
-        return (
-          sessionIdRef.current ? (
+        return sessionIdRef.current ? (
           <QuestionsTab sessionId={sessionIdRef.current} />
         ) : (
-        <Text style={transcriptionStyles.placeholder}>Session not ready yet...</Text>
-      )
-);
+          <Text style={transcriptionStyles.placeholder}>Session not ready yet...</Text>
+        );
       case 'Notes':
-  if (!recordingStopped) {
-    return <Text style={transcriptionStyles.placeholder}>You can write your own notes!</Text>;
-  } else if (sessionIdRef.current !== null) {
-    return <NotesTab sessionId={sessionIdRef.current} />;
-  } else {
-    return <Text style={transcriptionStyles.placeholder}>Session not ready yet...</Text>;
-  }
+        return sessionIdRef.current ? (
+          <NotesTab sessionId={sessionIdRef.current} />
+        ) : (
+          <Text style={transcriptionStyles.placeholder}>Session not ready yet...</Text>
+        );
       case 'Transcript':
-        return (
+        return transcripts.length === 0 ? (
+          <Text style={transcriptionStyles.placeholder}>No transcript available yet.</Text>
+        ) : (
           <View>
             {transcripts.map((item, index) => (
               <View key={index} style={{ marginBottom: 12 }}>
@@ -182,7 +213,7 @@ export default function TranscriptionScreen({ navigation }: any) {
               </View>
             ))}
             <Text style={{ marginTop: 12, fontSize: 12, color: 'gray', textAlign: 'center' }}>
-              Transcript is updated every 30s. <Text style={{ textDecorationLine: 'underline' }}>Update now</Text>
+              Transcript is updated every 30s.
             </Text>
           </View>
         );
@@ -193,7 +224,6 @@ export default function TranscriptionScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={transcriptionStyles.container}>
-      {/* Header */} 
       <View style={transcriptionStyles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={transcriptionStyles.back}>‹ Back</Text>
@@ -203,22 +233,20 @@ export default function TranscriptionScreen({ navigation }: any) {
         </View>
       </View>
 
-      <Text style={transcriptionStyles.title}>Untitled</Text>
+      <Text style={transcriptionStyles.title}>{title}</Text>
       <Text style={transcriptionStyles.subtitle}>
         {startTime} • {location}
       </Text>
 
-      <View style={transcriptionStyles.notesPrompt}>
-        <Text style={transcriptionStyles.notesText}>You can write your own notes!</Text>
-        <TouchableOpacity style={transcriptionStyles.notesButton}>
-          <Text style={{ fontWeight: 'bold' }}>Add Notes</Text>
-        </TouchableOpacity>
-      </View>
-
       <View style={transcriptionStyles.tabBar}>
         {TABS.map((tab) => (
           <TouchableOpacity key={tab} onPress={() => setActiveTab(tab)}>
-            <Text style={[transcriptionStyles.tabText, activeTab === tab && transcriptionStyles.activeTab]}>
+            <Text
+              style={[
+                transcriptionStyles.tabText,
+                activeTab === tab && transcriptionStyles.activeTab,
+              ]}
+            >
               {tab}
             </Text>
           </TouchableOpacity>
@@ -228,21 +256,35 @@ export default function TranscriptionScreen({ navigation }: any) {
       <View style={transcriptionStyles.content}>{renderTabContent()}</View>
 
       {showChatPanel ? (
-  <TranscriptChatPanel
-    onClose={() => setShowChatPanel(false)}
-    transcript={transcripts.map(t => t.text).join('\n')}
-    sessionId={sessionIdRef.current}
-  />
-) : (
-  <View style={transcriptionStyles.bottomBar}>
-    <TouchableOpacity style={transcriptionStyles.chatButton} onPress={() => setShowChatPanel(true)}>
-      <Text style={transcriptionStyles.chatText}>Chat with Transcript</Text>
-    </TouchableOpacity>
-    <TouchableOpacity style={transcriptionStyles.stopButton} onPress={stopRecording}>
-      <Text style={transcriptionStyles.stopText}>Stop</Text>
-    </TouchableOpacity>
-  </View>
-)}
+        <TranscriptChatPanel
+          onClose={() => setShowChatPanel(false)}
+          transcript={transcripts.map((t) => t.text).join('\n')}
+          sessionId={sessionIdRef.current}
+        />
+      ) : (
+        <View style={transcriptionStyles.bottomBar}>
+          <TouchableOpacity
+            style={transcriptionStyles.chatButton}
+            onPress={() => setShowChatPanel(true)}
+          >
+            <Text style={transcriptionStyles.chatText}>Chat with Transcript</Text>
+          </TouchableOpacity>
+          {!readOnly && (
+            <TouchableOpacity
+              style={transcriptionStyles.stopButton}
+              onPress={() => {
+                if (recorderIntervalRef.current) clearTimeout(recorderIntervalRef.current);
+                audioRecorderPlayer.stopRecorder();
+                audioRecorderPlayer.removeRecordBackListener();
+                setRecordingStopped(true);
+                setActiveTab('Notes');
+              }}
+            >
+              <Text style={transcriptionStyles.stopText}>Stop</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </SafeAreaView>
   );
 }

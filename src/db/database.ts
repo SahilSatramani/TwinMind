@@ -1,4 +1,5 @@
 import SQLite from 'react-native-sqlite-storage';
+import { format } from 'date-fns';
 
 SQLite.enablePromise(true);
 
@@ -38,14 +39,15 @@ export const initDatabase = async () => {
     );
   `);
 
-
+  // Create summaries table (if not exists)
   await db.executeSql(`
-    CREATE TABLE IF NOT EXISTS summaries (
-      session_id INTEGER PRIMARY KEY,
-      summary TEXT,
-      FOREIGN KEY(session_id) REFERENCES sessions(id)
-    );
-  `);
+  CREATE TABLE IF NOT EXISTS summaries (
+    session_id INTEGER PRIMARY KEY,
+    summary TEXT,
+    title TEXT,
+    FOREIGN KEY(session_id) REFERENCES sessions(id)
+  );
+`);
 };
 
 export const createSession = async (startTime: string, location: string): Promise<number> => {
@@ -93,13 +95,14 @@ export const getQuestionsBySession = async (sessionId: number) => {
 
 export const insertSummary = async (
   sessionId: number,
-  summary: string
+  summary: string,
+  title?: string
 ) => {
   const db = await getDBConnection();
   await db.executeSql(
-    `INSERT OR REPLACE INTO summaries (session_id, summary) VALUES (?, ?)`,
-    [sessionId, summary]
-  );
+  `INSERT OR REPLACE INTO summaries (session_id, summary, title) VALUES (?, ?, ?)`,
+  [sessionId, summary, title || null]
+);
 };
 
 export const getSummaryBySession = async (sessionId: number): Promise<string | null> => {
@@ -112,6 +115,22 @@ export const getSummaryBySession = async (sessionId: number): Promise<string | n
   return rows.length > 0 ? rows.item(0).summary : null;
 };
 
+export const getSummaryWithTitleBySession = async (
+  sessionId: number
+): Promise<{ summary: string; title: string } | null> => {
+  const db = await getDBConnection();
+  const result = await db.executeSql(
+    `SELECT summary, title FROM summaries WHERE session_id = ?`,
+    [sessionId]
+  );
+  const rows = result[0].rows;
+  if (rows.length > 0) {
+    const item = rows.item(0);
+    return { summary: item.summary, title: item.title };
+  }
+  return null;
+};
+
 export const getTranscriptsBySession = async (
   sessionId: number
 ): Promise<{ timestamp: string; text: string }[]> => {
@@ -121,4 +140,30 @@ export const getTranscriptsBySession = async (
     [sessionId]
   );
   return result[0].rows.raw();
+};
+export const getAllSessionsWithTitles = async () => {
+  const db = await getDBConnection();
+  const result = await db.executeSql(`
+    SELECT s.id, s.start_time, s.location, sm.title
+    FROM sessions s
+    LEFT JOIN summaries sm ON s.id = sm.session_id
+    ORDER BY s.start_time DESC;
+  `);
+  const sessions = result[0].rows.raw();
+  console.log('Sessions fetched from DB:', sessions);
+  return sessions;
+}
+export const getAllQuestionsGrouped = async () => {
+  const db = await getDBConnection();
+  const result = await db.executeSql(
+    `SELECT id, question, answer, timestamp FROM questions ORDER BY timestamp DESC`
+  );
+  const rows = result[0].rows.raw();
+
+  return rows.reduce((acc: any, row: any) => {
+    const dateKey = format(new Date(row.timestamp), 'EEE, MMM d');
+    if (!acc[dateKey]) acc[dateKey] = [];
+    acc[dateKey].push(row);
+    return acc;
+  }, {});
 };

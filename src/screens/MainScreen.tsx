@@ -4,6 +4,8 @@ import HeaderSection from '../components/HeaderSection';
 import BottomBar from '../components/BottomBar';
 import CalendarTab from '../components/CalenderTab';
 import mainStyles from '../styles/mainStyles';
+import MemoriesTab from '../components/MemoriesTab';
+import AllQuestionsTab from '../components/AllQuestionsTab';
 
 export default function MainScreen({ navigation }: any) {
   const [activeTab, setActiveTab] = useState<'Memories' | 'Calendar' | 'Questions'>('Memories');
@@ -13,9 +15,10 @@ export default function MainScreen({ navigation }: any) {
       case 'Calendar':
         return <CalendarTab />;
       case 'Memories':
-        return <Text style={mainStyles.placeholder}>No memories yet</Text>;
+        return <MemoriesTab />;
       case 'Questions':
-        return <Text style={mainStyles.placeholder}>Questions will appear here</Text>;
+        case 'Questions':
+        return <AllQuestionsTab />;
       default:
         return null;
     }
