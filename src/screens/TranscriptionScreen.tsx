@@ -38,6 +38,7 @@ type SessionRecord = {
 export default function TranscriptionScreen({ navigation, route }: any) {
   const { sessionId, readOnly } = route.params || {};
   const [recordTime, setRecordTime] = useState('00:00');
+  const [sessionStartTimestamp, setSessionStartTimestamp] = useState<number>(Date.now());
   const [startTime, setStartTime] = useState('');
   const [location, setLocation] = useState('');
   const [title, setTitle] = useState('Untitled');
@@ -57,11 +58,22 @@ export default function TranscriptionScreen({ navigation, route }: any) {
     }
   }, []);
 
+  useEffect(() => {
+    if (!readOnly && !recordingStopped) {
+      const interval = setInterval(() => {
+        const elapsed = Date.now() - sessionStartTimestamp;
+        const minutes = Math.floor(elapsed / 60000).toString().padStart(2, '0');
+        const seconds = Math.floor((elapsed % 60000) / 1000).toString().padStart(2, '0');
+        setRecordTime(`${minutes}:${seconds}`);
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [sessionStartTimestamp, readOnly, recordingStopped]);
+
   const loadSessionDetails = async (sid: number) => {
     try {
       const summary = await getSummaryWithTitleBySession(sid);
       if (summary?.title) setTitle(summary.title);
-
       const transcriptData = await getTranscriptsBySession(sid);
       const mapped = transcriptData.map(t => ({ time: t.timestamp, text: t.text }));
       setTranscripts(mapped);
@@ -87,6 +99,7 @@ export default function TranscriptionScreen({ navigation, route }: any) {
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const fullTime = `${dateStr} • ${timeStr}`;
     setStartTime(fullTime);
+    setSessionStartTimestamp(Date.now());
 
     const loc = await getLocation();
     setLocation(loc || 'Location unavailable');
@@ -94,7 +107,6 @@ export default function TranscriptionScreen({ navigation, route }: any) {
     try {
       const id = await createSession(fullTime, loc || 'Unknown');
       sessionIdRef.current = id;
-      console.log('🆕 Session started with ID:', id);
     } catch (err) {
       console.error('Session creation failed:', err);
     }
@@ -154,7 +166,6 @@ export default function TranscriptionScreen({ navigation, route }: any) {
       recorderIntervalRef.current = setTimeout(async () => {
         await audioRecorderPlayer.stopRecorder();
         audioRecorderPlayer.removeRecordBackListener();
-
         chunkPathsRef.current.push(uri);
 
         const realPath = uri.replace('file://', '');
@@ -163,9 +174,7 @@ export default function TranscriptionScreen({ navigation, route }: any) {
         if (exists) {
           const transcription = await transcribeAudioChunk(uri);
           const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
           setTranscripts((prev) => [...prev, { time: timeStr, text: transcription }]);
-
           if (sessionIdRef.current) {
             await insertTranscript(sessionIdRef.current, timeStr, transcription);
           }
@@ -173,11 +182,6 @@ export default function TranscriptionScreen({ navigation, route }: any) {
 
         startNewChunk();
       }, 30000);
-
-      audioRecorderPlayer.addRecordBackListener((e) => {
-        setRecordTime(audioRecorderPlayer.mmssss(Math.floor(e.currentPosition)));
-        return;
-      });
     };
 
     startNewChunk();
@@ -190,7 +194,6 @@ export default function TranscriptionScreen({ navigation, route }: any) {
     setRecordingStopped(true);
     setActiveTab('Notes');
 
-    // Wait for transcript if it's not arrived yet
     let retries = 10;
     while (retries > 0 && transcripts.length === 0) {
       await new Promise(resolve => setTimeout(resolve, 500));
