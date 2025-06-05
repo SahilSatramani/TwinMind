@@ -11,8 +11,8 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
-import { OPENAI_API_KEY } from '@env';
-import { insertQuestionAnswer } from '../db/database';
+import { getTranscriptAnswer } from '../services/chatServices';
+import { saveQuestionAnswer } from '../services/qaStorageService';
 
 const suggestions = [
   'Summarize everything in great detail',
@@ -29,133 +29,79 @@ export default function TranscriptChatPanel({
   transcript: string;
   sessionId: number | null;
 }) {
-    console.log('TranscriptChatPanel received sessionId:', sessionId);
   const [query, setQuery] = useState('');
-  const [chat, setChat] = useState<{ question: string; answer: string }[]>([]);
+  const [chatHistory, setChatHistory] = useState<{ question: string; answer: string }[]>([]);
   const [webSearch, setWebSearch] = useState(false);
 
-const handleAsk = async (customQuery?: string) => {
-  const finalQuery = customQuery || query;
-  if (!finalQuery.trim()) return;
+  const handleAsk = async (customQuery?: string) => {
+    const question = customQuery || query;
+    if (!question.trim()) return;
 
-  setChat((prev) => [...prev, { question: finalQuery, answer: '...' }]);
-  setQuery('');
+    setChatHistory((prev) => [...prev, { question, answer: '...' }]);
+    setQuery('');
 
-  const saveToDB = async (question: string, answer: string) => {
-    if (!sessionId) return;
-    const timestamp = new Date().toISOString();
+    if (!transcript || transcript.trim().split(/\s+/).length < 10) {
+      const fallback = "The transcript is too brief to answer that. Please continue recording or ask again later.";
+      updateAnswerInChat(fallback);
+      await saveQuestionAnswer(sessionId, question, fallback);
+      return;
+    }
+
     try {
-      await insertQuestionAnswer(sessionId, question, answer, timestamp);
-      console.log('stored in DB:', { question, answer });
+      const answer = await getTranscriptAnswer(transcript, question);
+      updateAnswerInChat(answer);
+      await saveQuestionAnswer(sessionId, question, answer);
     } catch (err) {
-      console.error('Failed to store Q&A:', err);
+      console.error('GPT API error:', err);
+      const errorMsg = 'An error occurred while generating the answer.';
+      updateAnswerInChat(errorMsg);
+      await saveQuestionAnswer(sessionId, question, errorMsg);
     }
   };
 
-  // Handle short or missing transcript
-  if (!transcript || transcript.trim().split(/\s+/).length < 10) {
-    const fallback = "The transcript is too brief to answer that. Please continue recording or ask again later.";
-    setChat((prev) => {
-      const updated = [...prev];
-      updated[updated.length - 1].answer = fallback;
-      return updated;
-    });
-    await saveToDB(finalQuery, fallback);
-    return;
-  }
-
-  try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          {
-            role: 'system',
-            content: `You are an assistant answering based only on this transcript:\n${transcript}`,
-          },
-          { role: 'user', content: finalQuery },
-        ],
-      }),
-    });
-
-    const data = await response.json();
-    const answer = data.choices?.[0]?.message?.content || 'No answer found.';
-
-    setChat((prev) => {
+  const updateAnswerInChat = (answer: string) => {
+    setChatHistory((prev) => {
       const updated = [...prev];
       updated[updated.length - 1].answer = answer;
       return updated;
     });
+  };
 
-    await saveToDB(finalQuery, answer);
-  } catch (err) {
-    console.error('GPT API error:', err);
-    const errorMsg = 'An error occurred while generating the answer.';
-    setChat((prev) => {
-      const updated = [...prev];
-      updated[updated.length - 1].answer = errorMsg;
-      return updated;
-    });
-    await saveToDB(finalQuery, errorMsg);
-  }
-};
+  const renderSuggestion = ({ item }: { item: string }) => (
+    <TouchableOpacity style={styles.suggestionRow} onPress={() => handleAsk(item)}>
+      <Text style={styles.suggestionText}>{item}</Text>
+      <Text style={styles.arrow}>→</Text>
+    </TouchableOpacity>
+  );
 
   return (
-    <KeyboardAvoidingView
-      style={styles.panel}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      {/* Close Button */}
+    <KeyboardAvoidingView style={styles.panel} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <TouchableOpacity onPress={onClose}>
         <Text style={styles.close}>✕</Text>
       </TouchableOpacity>
 
-      {/* Top Input */}
-      <TextInput
-        style={styles.topInput}
-        placeholder="Ask anything about this transcript..."
-        placeholderTextColor="#888"
-        value={query}
-        onChangeText={setQuery}
-        onSubmitEditing={() => handleAsk()}
-      />
-
-      {/* Suggestions */}
-      {chat.length === 0 && (
+      {chatHistory.length === 0 && (
         <FlatList
           data={suggestions}
           keyExtractor={(item) => item}
-          renderItem={({ item }) => (
-            <TouchableOpacity style={styles.suggestionRow} onPress={() => handleAsk(item)}>
-              <Text style={styles.suggestionText}>{item}</Text>
-              <Text style={styles.arrow}>→</Text>
-            </TouchableOpacity>
-          )}
+          renderItem={renderSuggestion}
         />
       )}
 
-      {/* Web Search Toggle */}
       <View style={styles.toggleRow}>
         <Text style={styles.toggleLabel}>🌐 Web Search</Text>
         <Switch value={webSearch} onValueChange={setWebSearch} />
       </View>
 
-      {/* Chat Display */}
       <ScrollView style={styles.chatContainer}>
-        {chat.map((item, idx) => (
-          <View key={idx} style={styles.chatBlock}>
+        {chatHistory.map((item, index) => (
+          <View key={index} style={styles.chatBlock}>
             <Text style={styles.question}>{item.question}</Text>
             <Text style={styles.answer}>{item.answer}</Text>
           </View>
         ))}
       </ScrollView>
 
-      {/* Bottom Input */}
       <View style={styles.bottomBar}>
         <TextInput
           style={styles.bottomInput}
@@ -183,13 +129,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginBottom: 12,
     color: '#333',
-  },
-  topInput: {
-    fontSize: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderColor: '#ddd',
-    marginBottom: 12,
   },
   suggestionRow: {
     flexDirection: 'row',
