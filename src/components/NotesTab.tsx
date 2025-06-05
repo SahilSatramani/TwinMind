@@ -23,7 +23,7 @@ export default function NotesTab({ sessionId }: { sessionId: number }) {
         console.log(`Found ${chunks.length} transcript chunks`);
         return chunks.map((t) => t.text).join('\n');
       }
-      console.log(`⏳ Waiting for transcript chunks... (${i + 1}/${retries})`);
+      console.log(` Waiting for transcript chunks... (${i + 1}/${retries})`);
       await new Promise((res) => setTimeout(res, delay));
     }
     throw new Error('No transcripts available after waiting.');
