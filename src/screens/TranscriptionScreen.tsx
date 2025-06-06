@@ -172,7 +172,7 @@ const stopRecording = async () => {
         const displayTranscripts = readOnly ? loadedTranscripts : transcripts;
 
         return displayTranscripts.length === 0 ? (
-        <Text style={transcriptionStyles.placeholder}>No transcript available yet.</Text>
+        <Text style={transcriptionStyles.placeholder}>Transcript is updated every 30s.</Text>
         ) : (
         <View>
         {displayTranscripts.map((item, index) => (

@@ -87,7 +87,7 @@ export const saveQuestionAnswerToCloud = async (
 // Fetch all sessions from the cloud
 // This function retrieves all sessions from the Firestore database
 type CloudSession = {
-  sessionId: number; // sessionId can be a string or number based on your Firestore setup
+  sessionId: string; // sessionId can be a string or number based on your Firestore setup
   title: string;
   location: string;
   timestamp: string;
@@ -99,7 +99,7 @@ export const fetchCloudSessions = async (): Promise<CloudSession[]> => {
     const sessions: CloudSession[] = snapshot.docs.map(doc => {
       const data = doc.data();
       return {
-        sessionId: parseInt(doc.id),
+        sessionId: doc.id,
         title: data.title || '',
         location: data.location || '',
         timestamp: data.timestamp || '',
@@ -111,7 +111,7 @@ export const fetchCloudSessions = async (): Promise<CloudSession[]> => {
     return [];
   }
 };
-export const fetchTranscriptsForSession = async (sessionId: number) => {
+export const fetchTranscriptsForSession = async (sessionId: string) => {
   try {
     const snapshot = await firestore()
       .collection('sessions')
@@ -130,7 +130,7 @@ export const fetchTranscriptsForSession = async (sessionId: number) => {
   }
 };
 
-export const fetchSummaryForSession = async (sessionId: number) => {
+export const fetchSummaryForSession = async (sessionId: string) => {
   try {
     const doc = await firestore().collection('sessions').doc(sessionId.toString()).get();
     const data = doc.data();

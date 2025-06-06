@@ -20,7 +20,7 @@ export const syncSessionsFromCloud = async () => {
     try {
       const localSession = await db.executeSql(
         'SELECT id FROM sessions WHERE cloud_id = ?',
-        [session.sessionId.toString()]
+        [session.sessionId]
       );
 
       // Only sync if not already stored
