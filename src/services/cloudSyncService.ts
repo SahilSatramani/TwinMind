@@ -25,7 +25,7 @@ export const syncSessionsFromCloud = async () => {
 
       // Only sync if not already stored
       if (localSession[0].rows.length === 0) {
-        const sessionId = await createSession(session.timestamp, session.location);
+        const sessionId = await createSession(session.timestamp, session.location,session.sessionId);
 
         const transcripts = await fetchTranscriptsForSession(session.sessionId);
         for (const t of transcripts) {
