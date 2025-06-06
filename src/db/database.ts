@@ -11,12 +11,13 @@ export const initDatabase = async () => {
   const db = await getDBConnection();
 
   await db.executeSql(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      start_time TEXT,
-      location TEXT
-    );
-  `);
+  CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    start_time TEXT,
+    location TEXT,
+    cloud_id TEXT UNIQUE
+  );
+`);
 
   await db.executeSql(`
     CREATE TABLE IF NOT EXISTS transcripts (
@@ -50,11 +51,14 @@ export const initDatabase = async () => {
 `);
 };
 
-export const createSession = async (startTime: string, location: string): Promise<number> => {
+export const createSession = async (
+  startTime: string,
+  location: string,
+): Promise<number> => {
   const db = await getDBConnection();
   const result = await db.executeSql(
-    `INSERT INTO sessions (start_time, location) VALUES (?, ?);`,
-    [startTime, location]
+    `INSERT INTO sessions (start_time, location, cloud_id) VALUES (?, ?, ?);`,
+    [startTime, location || null]
   );
   return result[0].insertId!;
 };
