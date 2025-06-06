@@ -1,4 +1,3 @@
-// src/components/HeaderSection.tsx
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -16,9 +15,12 @@ export default function HeaderSection() {
         </View>
       </TouchableOpacity>
 
-      <Text style={styles.title}>
-        TwinMind <Text style={styles.pro}>PRO</Text>
-      </Text>
+      <View style={styles.centerSection}>
+        <Text style={styles.title}>TwinMind</Text>
+        <View style={styles.proBadge}>
+          <Text style={styles.proText}>PRO</Text>
+        </View>
+      </View>
 
       <TouchableOpacity>
         <Text style={styles.help}>Help</Text>
@@ -47,16 +49,27 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
+  centerSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   title: {
     fontSize: 20,
     fontWeight: '600',
+    marginRight: 6,
   },
-  pro: {
-    fontSize: 12,
-    color: '#fff',
+  proBadge: {
     backgroundColor: '#003366',
-    paddingHorizontal: 6,
-    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  proText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#fff',
   },
   help: {
     color: '#155B88',
