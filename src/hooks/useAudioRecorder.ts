@@ -5,7 +5,7 @@ import { PermissionsAndroid, Platform } from 'react-native';
 import { transcribeAudioChunk } from '../utils/transcribe';
 import { insertTranscript } from '../db/database';
 import { saveTranscriptChunkToCloud } from '../services/cloudServiceSession';
-
+import { getCloudIdBySessionId } from '../db/database';
 const audioRecorderPlayer = new AudioRecorderPlayer();
 
 export const useAudioRecorder = (getSessionId: ()=>number | null) => {
@@ -64,7 +64,9 @@ export const useAudioRecorder = (getSessionId: ()=>number | null) => {
 if (currentSessionId) {
   try {
     await insertTranscript(currentSessionId, timeStr, transcription);
-    await saveTranscriptChunkToCloud(currentSessionId, timeStr, transcription);
+    const cloudId = await getCloudIdBySessionId(currentSessionId);
+    if (cloudId) {
+    await saveTranscriptChunkToCloud(cloudId, timeStr, transcription);}
   } catch (err) {
     console.error('Failed to insert transcript:', err);
   }

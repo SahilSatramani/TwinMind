@@ -18,14 +18,13 @@ export default function MemoriesTab() {
   useEffect(() => {
     const loadSessions = async () => {
       const sessions = await getAllSessionsWithTitles();
-      console.log('Sessions fetched:', sessions);
+      //console.log('Sessions fetched:', sessions);
 
       const grouped = sessions.reduce((acc: any, session: Session) => {
         try {
-          // Clean up: remove bullet and replace weird spaces with normal ones
           const cleaned = session.start_time
             .replace('•', '')
-            .replace(/\u202F|\u00A0/g, ' ') // fix narrow non-breaking space and NBSP
+            .replace(/\u202F|\u00A0/g, ' ') 
             .replace(/\s+/g, ' ')
             .trim();
 
@@ -47,7 +46,7 @@ export default function MemoriesTab() {
         data: grouped[date],
       }));
 
-      console.log('Formatted sections:', formatted);
+      //console.log('Formatted sections:', formatted);
       setSections(formatted);
     };
 

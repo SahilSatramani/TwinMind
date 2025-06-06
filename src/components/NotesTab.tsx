@@ -5,8 +5,9 @@ import {
   insertSummary,
   getSummaryWithTitleBySession,
 } from '../db/database';
-import { OPENAI_API_KEY } from '@env';
 import { saveSummaryToCloud } from '../services/cloudServiceSession';
+import { generateSummaryAndTitle } from '../services/summaryService'; 
+import { getCloudIdBySessionId } from '../db/database';
 
 export default function NotesTab({ sessionId }: { sessionId: number }) {
   const [summary, setSummary] = useState<string | null>(null);
@@ -41,59 +42,18 @@ export default function NotesTab({ sessionId }: { sessionId: number }) {
           return;
         }
 
-        const combined = await waitForTranscripts(sessionId);
+        const transcript = await waitForTranscripts(sessionId);
+        const { summary: generatedSummary, title: generatedTitle } =
+          await generateSummaryAndTitle(transcript); //service here
 
-        // Generate both summary and title via OpenAI
-        const summaryPrompt = {
-          role: 'system',
-          content:
-            'Summarize the following meeting transcript in a structured format with key points, actions, and decisions:',
-        };
-
-        const titlePrompt = {
-          role: 'system',
-          content:
-            'Given the following transcript, return a concise and descriptive title (max 10 words) summarizing the meeting topic:',
-        };
-
-        const [summaryRes, titleRes] = await Promise.all([
-          fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${OPENAI_API_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: 'gpt-3.5-turbo',
-              messages: [summaryPrompt, { role: 'user', content: combined }],
-            }),
-          }),
-          fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${OPENAI_API_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: 'gpt-3.5-turbo',
-              messages: [titlePrompt, { role: 'user', content: combined }],
-            }),
-          }),
-        ]);
-
-        const summaryData = await summaryRes.json();
-        const titleData = await titleRes.json();
-
-        const generatedSummary =
-          summaryData.choices?.[0]?.message?.content || 'Summary not available.';
-        const generatedTitle =
-          titleData.choices?.[0]?.message?.content?.trim() || 'Untitled';
-        await saveSummaryToCloud(sessionId, generatedSummary, generatedTitle);  
+        const cloudId = await getCloudIdBySessionId(sessionId);
+        if (cloudId) {
+          await saveSummaryToCloud(cloudId, generatedSummary, generatedTitle);
+      }
+        await insertSummary(sessionId, generatedSummary, generatedTitle);
 
         setSummary(generatedSummary);
         setTitle(generatedTitle);
-
-        await insertSummary(sessionId, generatedSummary, generatedTitle);
       } catch (err) {
         console.error('Error generating summary or title:', err);
         setSummary('Summary could not be generated. Try again later.');

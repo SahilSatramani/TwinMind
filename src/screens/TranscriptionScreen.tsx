@@ -15,6 +15,7 @@ import { fetchLocation } from '../services/locationServices';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { generateTitleFromTranscript } from '../services/stopRecordingService';
 import { createCloudSession } from '../services/cloudServiceSession';
+import uuid from 'react-native-uuid';
 import {
   createSession,
   getSummaryWithTitleBySession,
@@ -94,9 +95,11 @@ export default function TranscriptionScreen({ navigation, route }: any) {
   setLocation(loc || 'Location unavailable');
 
   try {
-    const id = await createSession(fullTime, loc || 'Unknown');
+    const cloudId = uuid.v4() as string;    
+    const id = await createSession(fullTime, loc || 'Unknown', cloudId);
+    console.log('Local session ID:', id);
     sessionIdRef.current = id;
-    await createCloudSession(id, 'Untitled', loc || 'Unknown', fullTime);
+    await createCloudSession(cloudId, 'Untitled', loc || 'Unknown', fullTime); // store same ID in Firestore      
     await startRecording();
   } catch (err) {
     console.error('Session creation failed:', err);
