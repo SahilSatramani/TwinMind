@@ -14,6 +14,7 @@ import {
 import { getTranscriptAnswer } from '../services/chatServices';
 import { saveQuestionAnswer } from '../services/qaStorageService';
 import { saveQuestionAnswerToCloud } from '../services/cloudServiceSession';
+import { getCloudIdBySessionId } from '../db/database';
 
 const suggestions = [
   'Summarize everything in great detail',
@@ -44,18 +45,36 @@ export default function TranscriptChatPanel({
     if (!transcript || transcript.trim().split(/\s+/).length < 10) {
       const fallback = "The transcript is too brief to answer that. Please continue recording or ask again later.";
       updateAnswerInChat(fallback);
-      await saveQuestionAnswer(sessionId, question, fallback);
-      if (sessionId !== null) {
-        await saveQuestionAnswerToCloud(sessionId, question, fallback);
-      }      
+      if (sessionId == null) {
+        console.warn('Cannot fetch cloudId: sessionId is null');
+        return;
+      }
+      const cloudId = await getCloudIdBySessionId(sessionId);
+      console.log('Cloud ID from transcript panel:', cloudId);
+      if (cloudId) {
+        await saveQuestionAnswerToCloud(cloudId, question, fallback);
+      }    
+      await saveQuestionAnswer(sessionId, question, fallback);  
       return;
     }
 
     try {
       const answer = await getTranscriptAnswer(transcript, question);
       updateAnswerInChat(answer);
-      await saveQuestionAnswer(sessionId, question, answer);
-    } catch (err) {
+
+      await saveQuestionAnswer(sessionId, question, answer); // local save 
+
+      if (sessionId != null) {
+        const cloudId = await getCloudIdBySessionId(sessionId);
+        console.log('Cloud ID after GPT answer:', cloudId);
+
+      if (cloudId) {
+        await saveQuestionAnswerToCloud(cloudId, question, answer); // cloud save 
+      }   else {
+        console.warn('Cloud ID not found; skipping cloud save');
+      }
+    }
+} catch (err) {
       console.error('GPT API error:', err);
       const errorMsg = 'An error occurred while generating the answer.';
       updateAnswerInChat(errorMsg);

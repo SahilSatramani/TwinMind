@@ -54,11 +54,12 @@ export const initDatabase = async () => {
 export const createSession = async (
   startTime: string,
   location: string,
+  cloudId?: string
 ): Promise<number> => {
   const db = await getDBConnection();
   const result = await db.executeSql(
-    `INSERT INTO sessions (start_time, location, cloud_id) VALUES (?, ?, ?);`,
-    [startTime, location || null]
+    `INSERT INTO sessions (start_time, location, cloud_id) VALUES (?, ?, ?)`,
+    [startTime, location || null, cloudId || null]
   );
   return result[0].insertId!;
 };
@@ -170,4 +171,10 @@ export const getAllQuestionsGrouped = async () => {
     acc[dateKey].push(row);
     return acc;
   }, {});
+};
+export const getCloudIdBySessionId = async (sessionId: number): Promise<string | null> => {
+  const db = await getDBConnection();
+  const result = await db.executeSql(`SELECT cloud_id FROM sessions WHERE id = ?`, [sessionId]);
+  const rows = result[0].rows;
+  return rows.length > 0 ? rows.item(0).cloud_id : null;
 };

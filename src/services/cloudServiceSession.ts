@@ -3,7 +3,7 @@ import { sessionsCollection, transcriptsCollection,firestore } from './firestore
 import { createSession,getDBConnection } from '../db/database';
 
 export const createCloudSession = async (
-  sessionId: number,
+  sessionId: string,
   title: string,
   location: string,
   timestamp: string
@@ -22,7 +22,7 @@ export const createCloudSession = async (
 };
 
 export const saveTranscriptChunkToCloud = async (
-  sessionId: number,
+  sessionId: string,
   time: string,
   text: string
 ) => {
@@ -44,7 +44,7 @@ export const saveTranscriptChunkToCloud = async (
   }
 };
 export const saveSummaryToCloud = async (
-  sessionId: number,
+  sessionId: string,
   summary: string,
   title: string
 ) => {
@@ -63,7 +63,7 @@ export const saveSummaryToCloud = async (
   }
 };
 export const saveQuestionAnswerToCloud = async (
-  sessionId: number,
+  sessionId: string,
   question: string,
   answer: string
 ) => {
@@ -83,7 +83,7 @@ export const saveQuestionAnswerToCloud = async (
   }
 };
 
-/** 
+
 // Fetch all sessions from the cloud
 // This function retrieves all sessions from the Firestore database
 type CloudSession = {
@@ -111,4 +111,60 @@ export const fetchCloudSessions = async (): Promise<CloudSession[]> => {
     return [];
   }
 };
-*/
+export const fetchTranscriptsForSession = async (sessionId: number) => {
+  try {
+    const snapshot = await firestore()
+      .collection('sessions')
+      .doc(sessionId.toString())
+      .collection('transcripts')
+      .orderBy('createdAt')
+      .get();
+
+    return snapshot.docs.map(doc => ({
+      time: doc.data().time || '',
+      text: doc.data().text || '',
+    }));
+  } catch (err) {
+    console.error(`Failed to fetch transcripts for session ${sessionId}:`, err);
+    return [];
+  }
+};
+
+export const fetchSummaryForSession = async (sessionId: number) => {
+  try {
+    const doc = await firestore().collection('sessions').doc(sessionId.toString()).get();
+    const data = doc.data();
+    return {
+      summary: data?.summary || '',
+      title: data?.title || '',
+    };
+  } catch (err) {
+    console.error(`Failed to fetch summary for session ${sessionId}:`, err);
+    return null;
+  }
+};
+
+// In cloudServiceSession.ts
+export const fetchQuestionsForSession = async (sessionId: string) => {
+  try {
+    const snapshot = await firestore()
+      .collection('sessions')
+      .doc(sessionId.toString())
+      .collection('questions')
+      .orderBy('createdAt')
+      .get();
+
+    return snapshot.docs.map(doc => {
+      const data = doc.data();
+      const timestamp = data.createdAt?.toDate().toISOString() || new Date().toISOString();
+      return {
+        question: data.question || '',
+        answer: data.answer || '',
+        timestamp,
+      };
+    });
+  } catch (err) {
+    console.error(`Failed to fetch Q&A for session ${sessionId}:`, err);
+    return [];
+  }
+};
