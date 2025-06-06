@@ -3,32 +3,27 @@ import AudioRecorderPlayer from 'react-native-audio-recorder-player';
 import RNFS from 'react-native-fs';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { transcribeAudioChunk } from '../utils/transcribe';
-import { insertTranscript } from '../db/database';
+import { insertTranscript, getCloudIdBySessionId } from '../db/database';
 import { saveTranscriptChunkToCloud } from '../services/cloudServiceSession';
-import { getCloudIdBySessionId } from '../db/database';
+
 const audioRecorderPlayer = new AudioRecorderPlayer();
 
-export const useAudioRecorder = (getSessionId: ()=>number | null) => {
-  const [recordTime, setRecordTime] = useState('00:00');
+export const useAudioRecorder = (getSessionId: () => number | null) => {
+  const [elapsedTime, setElapsedTime] = useState('00:00');
   const [transcripts, setTranscripts] = useState<{ time: string; text: string }[]>([]);
   const [sessionStartTimestamp, setSessionStartTimestamp] = useState(Date.now());
 
   const recorderIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const totalTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingStartRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
       if (recorderIntervalRef.current) clearTimeout(recorderIntervalRef.current);
+      if (totalTimerRef.current) clearInterval(totalTimerRef.current);
       audioRecorderPlayer.removeRecordBackListener();
     };
   }, []);
-
-  const startRecording = async () => {
-    const permissionGranted = await requestAudioPermission();
-    if (!permissionGranted) return;
-
-    setSessionStartTimestamp(Date.now());
-    startNewChunk();
-  };
 
   const requestAudioPermission = async (): Promise<boolean> => {
     if (Platform.OS === 'android') {
@@ -38,6 +33,25 @@ export const useAudioRecorder = (getSessionId: ()=>number | null) => {
       return granted === PermissionsAndroid.RESULTS.GRANTED;
     }
     return true;
+  };
+
+  const startRecording = async () => {
+    const permissionGranted = await requestAudioPermission();
+    if (!permissionGranted) return;
+
+    const now = Date.now();
+    setSessionStartTimestamp(now);
+    recordingStartRef.current = now;
+
+    // Start elapsed time ticker
+    totalTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - (recordingStartRef.current || Date.now());
+      const minutes = Math.floor(elapsed / 60000).toString().padStart(2, '0');
+      const seconds = Math.floor((elapsed % 60000) / 1000).toString().padStart(2, '0');
+      setElapsedTime(`${minutes}:${seconds}`);
+    }, 1000);
+
+    startNewChunk();
   };
 
   const startNewChunk = async () => {
@@ -60,39 +74,35 @@ export const useAudioRecorder = (getSessionId: ()=>number | null) => {
         });
 
         setTranscripts((prev) => [...prev, { time: timeStr, text: transcription }]);
+
         const currentSessionId = getSessionId();
-if (currentSessionId) {
-  try {
-    await insertTranscript(currentSessionId, timeStr, transcription);
-    const cloudId = await getCloudIdBySessionId(currentSessionId);
-    if (cloudId) {
-    await saveTranscriptChunkToCloud(cloudId, timeStr, transcription);}
-  } catch (err) {
-    console.error('Failed to insert transcript:', err);
-  }
-}
+        if (currentSessionId) {
+          try {
+            await insertTranscript(currentSessionId, timeStr, transcription);
+            const cloudId = await getCloudIdBySessionId(currentSessionId);
+            if (cloudId) {
+              await saveTranscriptChunkToCloud(cloudId, timeStr, transcription);
+            }
+          } catch (err) {
+            console.error('Failed to insert transcript:', err);
+          }
+        }
       }
 
-      startNewChunk();
+      startNewChunk(); // Start next chunk after 30s
     }, 30000);
-
-    audioRecorderPlayer.addRecordBackListener((e) => {
-      const millis = Math.floor(e.currentPosition);
-      const minutes = Math.floor(millis / 60000).toString().padStart(2, '0');
-      const seconds = Math.floor((millis % 60000) / 1000).toString().padStart(2, '0');
-      setRecordTime(`${minutes}:${seconds}`);
-      return;
-    });
   };
 
   const stopRecording = async () => {
     if (recorderIntervalRef.current) clearTimeout(recorderIntervalRef.current);
+    if (totalTimerRef.current) clearInterval(totalTimerRef.current);
+
     await audioRecorderPlayer.stopRecorder();
     audioRecorderPlayer.removeRecordBackListener();
   };
 
   return {
-    recordTime,
+    recordTime: elapsedTime,
     transcripts,
     sessionStartTimestamp,
     startRecording,
