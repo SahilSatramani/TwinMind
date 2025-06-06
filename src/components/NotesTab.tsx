@@ -45,12 +45,12 @@ export default function NotesTab({ sessionId }: { sessionId: number }) {
         const transcript = await waitForTranscripts(sessionId);
         const { summary: generatedSummary, title: generatedTitle } =
           await generateSummaryAndTitle(transcript); //service here
-
+        await insertSummary(sessionId, generatedSummary, generatedTitle);
         const cloudId = await getCloudIdBySessionId(sessionId);
         if (cloudId) {
           await saveSummaryToCloud(cloudId, generatedSummary, generatedTitle);
       }
-        await insertSummary(sessionId, generatedSummary, generatedTitle);
+        //await insertSummary(sessionId, generatedSummary, generatedTitle);
 
         setSummary(generatedSummary);
         setTitle(generatedTitle);
