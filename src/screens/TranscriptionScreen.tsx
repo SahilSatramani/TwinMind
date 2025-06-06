@@ -14,6 +14,7 @@ import NotesTab from '../components/NotesTab';
 import { fetchLocation } from '../services/locationServices';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { generateTitleFromTranscript } from '../services/stopRecordingService';
+import { createCloudSession } from '../services/cloudServiceSession';
 import {
   createSession,
   getSummaryWithTitleBySession,
@@ -79,27 +80,28 @@ export default function TranscriptionScreen({ navigation, route }: any) {
   };
 
   const startNewSession = async () => {
-    const now = new Date();
-    const dateStr = now.toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const fullTime = `${dateStr} • ${timeStr}`;
-    setStartTime(fullTime);
+  const now = new Date();
+  const dateStr = now.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const fullTime = `${dateStr} • ${timeStr}`;
+  setStartTime(fullTime);
 
-    const loc = await fetchLocation();
-    setLocation(loc || 'Location unavailable');
+  const loc = await fetchLocation();
+  setLocation(loc || 'Location unavailable');
 
-    try {
-      const id = await createSession(fullTime, loc || 'Unknown');
-      sessionIdRef.current = id;
-      await startRecording(); // begin recording
-    } catch (err) {
-      console.error('Session creation failed:', err);
-    }
-  };
+  try {
+    const id = await createSession(fullTime, loc || 'Unknown');
+    sessionIdRef.current = id;
+    await createCloudSession(id, 'Untitled', loc || 'Unknown', fullTime);
+    await startRecording();
+  } catch (err) {
+    console.error('Session creation failed:', err);
+  }
+};
 
 const stopRecording = async () => {
   await stopRecorderHook();

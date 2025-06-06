@@ -6,6 +6,7 @@ import {
   getSummaryWithTitleBySession,
 } from '../db/database';
 import { OPENAI_API_KEY } from '@env';
+import { saveSummaryToCloud } from '../services/cloudServiceSession';
 
 export default function NotesTab({ sessionId }: { sessionId: number }) {
   const [summary, setSummary] = useState<string | null>(null);
@@ -87,6 +88,7 @@ export default function NotesTab({ sessionId }: { sessionId: number }) {
           summaryData.choices?.[0]?.message?.content || 'Summary not available.';
         const generatedTitle =
           titleData.choices?.[0]?.message?.content?.trim() || 'Untitled';
+        await saveSummaryToCloud(sessionId, generatedSummary, generatedTitle);  
 
         setSummary(generatedSummary);
         setTitle(generatedTitle);

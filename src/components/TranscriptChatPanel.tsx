@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { getTranscriptAnswer } from '../services/chatServices';
 import { saveQuestionAnswer } from '../services/qaStorageService';
+import { saveQuestionAnswerToCloud } from '../services/cloudServiceSession';
 
 const suggestions = [
   'Summarize everything in great detail',
@@ -44,6 +45,9 @@ export default function TranscriptChatPanel({
       const fallback = "The transcript is too brief to answer that. Please continue recording or ask again later.";
       updateAnswerInChat(fallback);
       await saveQuestionAnswer(sessionId, question, fallback);
+      if (sessionId !== null) {
+        await saveQuestionAnswerToCloud(sessionId, question, fallback);
+      }      
       return;
     }
 
