@@ -11,9 +11,16 @@ import {
   getDBConnection,
   insertQuestionAnswer
 } from '../db/database';
+import auth from '@react-native-firebase/auth';
 
 export const syncSessionsFromCloud = async () => {
-  const sessions = await fetchCloudSessions();
+  const userEmail = auth().currentUser?.email ?? '';
+  if (!userEmail) {
+    console.warn('User email not available. Cannot sync sessions.');
+    return;
+  }
+
+  const sessions = await fetchCloudSessions(userEmail);
   const db = await getDBConnection();
 
   for (const session of sessions) {
@@ -23,9 +30,12 @@ export const syncSessionsFromCloud = async () => {
         [session.sessionId]
       );
 
-      // Only sync if not already stored
       if (localSession[0].rows.length === 0) {
-        const sessionId = await createSession(session.timestamp, session.location,session.sessionId);
+        const sessionId = await createSession(
+          session.timestamp,
+          session.location,
+          session.sessionId.toString()
+        );
 
         const transcripts = await fetchTranscriptsForSession(session.sessionId);
         for (const t of transcripts) {
@@ -39,7 +49,7 @@ export const syncSessionsFromCloud = async () => {
 
         const questions = await fetchQuestionsForSession(session.sessionId.toString());
         for (const q of questions) {
-            await insertQuestionAnswer(sessionId, q.question, q.answer, q.timestamp);
+          await insertQuestionAnswer(sessionId, q.question, q.answer, q.timestamp);
         }
 
         console.log(`Session ${session.sessionId} synced successfully.`);

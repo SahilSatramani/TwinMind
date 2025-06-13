@@ -6,14 +6,16 @@ export const createCloudSession = async (
   sessionId: string,
   title: string,
   location: string,
-  timestamp: string
+  timestamp: string,
+  userEmail: string
 ) => {
   try {
-    await sessionsCollection.doc(sessionId.toString()).set({
+    await sessionsCollection.doc(sessionId).set({
       sessionId,
       title,
       location,
       timestamp,
+      userEmail,
     });
     console.log('Cloud session stored successfully');
   } catch (err) {
@@ -93,9 +95,13 @@ type CloudSession = {
   timestamp: string;
 };
 
-export const fetchCloudSessions = async (): Promise<CloudSession[]> => {
+export const fetchCloudSessions = async (userEmail: string): Promise<CloudSession[]> => {
   try {
-    const snapshot = await firestore().collection('sessions').get();
+    const snapshot = await firestore()
+      .collection('sessions')
+      .where('userEmail', '==', userEmail)
+      .get();
+
     const sessions: CloudSession[] = snapshot.docs.map(doc => {
       const data = doc.data();
       return {
@@ -105,6 +111,7 @@ export const fetchCloudSessions = async (): Promise<CloudSession[]> => {
         timestamp: data.timestamp || '',
       };
     });
+
     return sessions;
   } catch (err) {
     console.error('Error fetching cloud sessions:', err);

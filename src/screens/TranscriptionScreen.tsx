@@ -6,7 +6,6 @@ import {
   SafeAreaView,
   ToastAndroid,
 } from 'react-native';
-import { OPENAI_API_KEY } from '@env';
 import transcriptionStyles from '../styles/transcriptionStyles';
 import TranscriptChatPanel from '../components/TranscriptChatPanel';
 import QuestionsTab from '../components/QuestionTab';
@@ -22,7 +21,8 @@ import {
   getTranscriptsBySession,
   getAllSessionsWithTitles,
 } from '../db/database';
-
+import auth from '@react-native-firebase/auth'
+const userEmail = auth().currentUser?.email ?? 'unknown@example.com';
 const TABS = ['Questions', 'Notes', 'Transcript'];
 
 type SessionRecord = {
@@ -99,7 +99,8 @@ export default function TranscriptionScreen({ navigation, route }: any) {
     const id = await createSession(fullTime, loc || 'Unknown', cloudId);
     console.log('Local session ID:', id);
     sessionIdRef.current = id;
-    await createCloudSession(cloudId, 'Untitled', loc || 'Unknown', fullTime); // store same ID in Firestore      
+
+await createCloudSession(cloudId, 'Untitled', loc || 'Unknown', fullTime, userEmail); // store same ID in Firestore      
     await startRecording();
   } catch (err) {
     console.error('Session creation failed:', err);

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,31 +12,47 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import settingStyles from '../styles/settingStyles';
 
 export default function SettingScreen({ navigation }: any) {
-  const [backupEnabled, setBackupEnabled] = React.useState(true);
+  const [backupEnabled, setBackupEnabled] = useState(true);
+  const [initial, setInitial] = useState('U');
+  const [name, setName] = useState('User');
+
+  useEffect(() => {
+    const user = auth().currentUser;
+    if (user) {
+      const displayName = user.displayName || user.email || 'User';
+      setName(displayName);
+      setInitial(displayName.charAt(0).toUpperCase());
+    }
+  }, []);
 
   const handleSignOut = async () => {
-    try {
+  try {
+    const userInfo = await GoogleSignin.getCurrentUser();
+
+    if (userInfo) {
       await GoogleSignin.revokeAccess();
       await GoogleSignin.signOut();
-      await auth().signOut();
-
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Login' }],
-      });
-    } catch (error) {
-      console.error('Error signing out:', error);
     }
-  };
+
+    await auth().signOut();
+
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Login' }],
+    });
+  } catch (error) {
+    console.error('Error signing out:', error);
+  }
+};
 
   return (
     <ScrollView style={settingStyles.container}>
       <View style={settingStyles.profileSection}>
         <View style={settingStyles.avatar}>
-          <Text style={settingStyles.avatarText}>S</Text>
+          <Text style={settingStyles.avatarText}>{initial}</Text>
         </View>
         <View style={{ marginLeft: 12 }}>
-          <Text style={settingStyles.name}>Sahil Satramani</Text>
+          <Text style={settingStyles.name}>{name}</Text>
           <Text style={settingStyles.manage}>Manage Account</Text>
         </View>
         <View style={settingStyles.proBadge}>

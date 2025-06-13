@@ -1,17 +1,24 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigationTypes';
+import auth from '@react-native-firebase/auth';
 
 export default function HeaderSection() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const [initial, setInitial] = useState('U');
+
+  useEffect(() => {
+    const name = auth().currentUser?.displayName || auth().currentUser?.email || 'User';
+    setInitial(name.charAt(0).toUpperCase());
+  }, []);
 
   return (
     <View style={styles.headerContainer}>
       <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
         <View style={styles.profileCircle}>
-          <Text style={styles.profileInitial}>S</Text>
+          <Text style={styles.profileInitial}>{initial}</Text>
         </View>
       </TouchableOpacity>
 
